@@ -5,6 +5,8 @@ import (
 
 	"github.com/gobwas/glob"
 	"github.com/hashicorp/terraform/helper/schema"
+
+	"gopkg.in/yaml.v2"
 )
 
 func dataSourceSitefilter() *schema.Resource {
@@ -22,14 +24,17 @@ func dataSourceSitefilter() *schema.Resource {
 				Default:      ".",
 				ValidateFunc: validateSeparator,
 			},
-			"site_configs": &schema.Schema{
+			"site_yamls": &schema.Schema{
 				Type:         schema.TypeMap,
 				Required:     true,
 				ValidateFunc: validateSiteConfigs,
 			},
 			"sites": &schema.Schema{
-				Type:     schema.TypeMap,
+				Type:     schema.TypeSet,
 				Computed: true,
+				Elem: &schema.Schema{
+					Type: schema.TypeString,
+				},
 			},
 		},
 	}
@@ -51,13 +56,8 @@ func validateSeparator(val interface{}, key string) ([]string, []error) {
 
 func validateSiteConfigs(val interface{}, key string) ([]string, []error) {
 	var errs []error
-	for id, rawSiteConfig := range val.(map[string]any) {
-		asMap, ok := rawSiteConfig.(map[string]any)
-		if !ok {
-			errs = append(errs, fmt.Errorf("invalid %q[%q]: not a map", key, id))
-			continue
-		}
-		if _, err := NewSiteMetadata(asMap); err != nil {
+	for id, siteYAML := range val.(map[string]any) {
+		if _, err := NewSiteMetadata(siteYAML.(string)); err != nil {
 			errs = append(errs, fmt.Errorf("invalid %q[%d]: %w", key, id, err))
 		}
 	}
@@ -68,7 +68,7 @@ func dataSourceSitefilterRead(d *schema.ResourceData, _ any) error {
 	var (
 		filter         = d.Get("filter").(string)
 		separator      = d.Get("separator").(string)
-		rawSiteConfigs = d.Get("site_configs").(map[string]any)
+		rawSiteConfigs = d.Get("site_yamls").(map[string]any)
 	)
 
 	filterGlob, err := glob.Compile(filter, []rune(separator)[0])
@@ -78,35 +78,31 @@ func dataSourceSitefilterRead(d *schema.ResourceData, _ any) error {
 
 	siteMetadata, err := unmarshalSiteMetadata(rawSiteConfigs)
 	if err != nil {
-		return fmt.Errorf("invalid site_configs: %w", err)
+		return fmt.Errorf("invalid site_yamls: %w", err)
 	}
 
-	filteredSites := map[string]any{}
+	var matchedSites []string
 
-	for key, meta := range siteMetadata {
+	for id, meta := range siteMetadata {
 		if filterGlob.Match(meta.FQN()) {
-			filteredSites[key] = rawSiteConfigs[key]
+			matchedSites = append(matchedSites, id)
 		}
 	}
 
 	d.SetId(filter)
-	d.Set("sites", filteredSites)
+	d.Set("sites", matchedSites)
 	return nil
 }
 
 func unmarshalSiteMetadata(rawSiteConfigs map[string]any) (map[string]SiteMetadata, error) {
 	metas := map[string]SiteMetadata{}
 
-	for key, raw := range rawSiteConfigs {
-		asMap, ok := raw.(map[string]any)
-		if !ok {
-			return nil, fmt.Errorf("invalid site_configs[%d]: must be a map", key)
-		}
-		meta, err := NewSiteMetadata(asMap)
+	for id, siteYAML := range rawSiteConfigs {
+		meta, err := NewSiteMetadata(siteYAML.(string))
 		if err != nil {
-			return nil, fmt.Errorf("invalid site_configs[%d]: %w", key, err)
+			return nil, fmt.Errorf("invalid site_yamls[%d]: %w", id, err)
 		}
-		metas[key] = meta
+		metas[id] = meta
 	}
 
 	return metas, nil
@@ -114,20 +110,33 @@ func unmarshalSiteMetadata(rawSiteConfigs map[string]any) (map[string]SiteMetada
 
 // SiteMetadata contains the metadata of a site required to construct its
 // fully qualified name (FQN).
-type SiteMetadata map[string]string
+type SiteMetadata struct {
+	Env         string `yaml:"env"`
+	Partition   string `yaml:"partition"`
+	ServingRole string `yaml:"servingRole"`
+	DataCenter  string `yaml:"dataCenter"`
+}
 
 // NewSiteMetadata returns a SiteMetadata constructed from the specified raw config map.
-func NewSiteMetadata(rawConfig map[string]any) (SiteMetadata, error) {
-	m := map[string]string{}
-
-	for _, k := range siteConfigRequiredKeys {
-		v, err := configAsString(rawConfig, k)
-		if err != nil {
-			return SiteMetadata(m), fmt.Errorf("invalid key %q: %w", k, err)
-		}
-		m[k] = v
+func NewSiteMetadata(configYAML string) (SiteMetadata, error) {
+	var m SiteMetadata
+	err := yaml.Unmarshal([]byte(configYAML), &m)
+	if err != nil {
+		return m, fmt.Errorf("failed to unmarshal YAML: %w", err)
 	}
-	return SiteMetadata(m), nil
+
+	switch {
+	case m.Env == "":
+		return m, fmt.Errorf("missing key: env")
+	case m.Partition == "":
+		return m, fmt.Errorf("missing key: partition")
+	case m.ServingRole == "":
+		return m, fmt.Errorf("missing key: servingRole")
+	case m.DataCenter == "":
+		return m, fmt.Errorf("missing key: dataCenter")
+	}
+
+	return m, nil
 }
 
 var siteConfigRequiredKeys = []string{
@@ -141,19 +150,9 @@ var siteConfigRequiredKeys = []string{
 func (m SiteMetadata) FQN() string {
 	return fmt.Sprintf(
 		"%s.%s.%s.%s",
-		m["env"],
-		m["partition"],
-		m["servingRole"],
-		m["dataCenter"],
+		m.Env,
+		m.Partition,
+		m.ServingRole,
+		m.DataCenter,
 	)
-}
-
-func configAsString(rawSiteConfig map[string]any, key string) (string, error) {
-	if v, ok := rawSiteConfig[key]; !ok {
-		return "", fmt.Errorf("%q is missing", key)
-	} else if vStr, ok := v.(string); !ok {
-		return "", fmt.Errorf("%q is not a string", key)
-	} else {
-		return vStr, nil
-	}
 }

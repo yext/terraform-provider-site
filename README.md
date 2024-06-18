@@ -24,12 +24,12 @@ $ go build
 
 ### Inputs
 
-#### `site_configs`
+#### `site_yamls`
 
-- Type: `map(map(any))`
+- Type: `map(string)`
 - Required
 
-A map of site config maps, keyed by site ID.
+A map of site config YAMLs, keyed by site ID.
 
 #### `filter`
 
@@ -49,6 +49,6 @@ A single-character separator for the glob.
 
 #### `sites`
 
-- Type: `map(map(any))`
+- Type: `set(string)`
 
-A subset of `site_configs` whose FQNs match `filter`.
+A set of site IDs from the keys of `site_yamls`, whose FQNs match `filter`.

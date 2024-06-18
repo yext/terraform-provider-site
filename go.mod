@@ -5,6 +5,7 @@ go 1.20
 require (
 	github.com/gobwas/glob v0.2.3
 	github.com/hashicorp/terraform v0.14.11
+	gopkg.in/yaml.v2 v2.4.0
 )
 
 require (
