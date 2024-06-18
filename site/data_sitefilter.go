@@ -18,6 +18,7 @@ func dataSourceSitefilter() *schema.Resource {
 			},
 			"separator": &schema.Schema{
 				Type:         schema.TypeString,
+				Optional:     true,
 				Default:      ".",
 				ValidateFunc: validateSeparator,
 			},
