@@ -23,8 +23,9 @@ func dataSourceSitefilter() *schema.Resource {
 				ValidateFunc: validateSeparator,
 			},
 			"site_configs": &schema.Schema{
-				Type:     schema.TypeMap,
-				Required: true,
+				Type:         schema.TypeMap,
+				Required:     true,
+				ValidateFunc: validateSiteConfigs,
 			},
 			"sites": &schema.Schema{
 				Type:     schema.TypeMap,
@@ -46,6 +47,21 @@ func validateSeparator(val interface{}, key string) ([]string, []error) {
 		return nil, []error{fmt.Errorf("%q must be a single character", key)}
 	}
 	return nil, nil
+}
+
+func validateSiteConfigs(val interface{}, key string) ([]string, []error) {
+	var errs []error
+	for id, rawSiteConfig := range val.(map[string]any) {
+		asMap, ok := rawSiteConfig.(map[string]any)
+		if !ok {
+			errs = append(errs, fmt.Errorf("invalid %q[%q]: not a map", key, id))
+			continue
+		}
+		if _, err := NewSiteMetadata(asMap); err != nil {
+			errs = append(errs, fmt.Errorf("invalid %q[%d]: %w", key, id, err))
+		}
+	}
+	return nil, errs
 }
 
 func dataSourceSitefilterRead(d *schema.ResourceData, _ any) error {
