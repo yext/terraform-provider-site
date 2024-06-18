@@ -8,8 +8,8 @@
 ## Building
 
 ```sh
-$ git clone git@github.com:yext/terraform-provider-glob
-$ cd terraform-provider-glob
+$ git clone git@github.com:yext/terraform-provider-site
+$ cd terraform-provider-site
 $ go build
 ```
 
@@ -36,7 +36,8 @@ A map of site config YAMLs, keyed by site ID.
 - Type: `string`
 - Required
 
-A valid [github.com/gobwas/glob][] glob for matching site fully-qualified names (FQN's).
+A valid [github.com/gobwas/glob](https://github.com/gobwas/glob) glob for matching site
+fully-qualified names (FQN's).
 
 #### `separator`
 
