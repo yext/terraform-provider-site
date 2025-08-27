@@ -2,6 +2,8 @@ package site
 
 import (
 	"fmt"
+	"strings"
+	"unicode"
 
 	"github.com/gobwas/glob"
 	"github.com/hashicorp/terraform/helper/schema"
@@ -41,7 +43,10 @@ func dataSourceSitefilter() *schema.Resource {
 }
 
 func validateGlob(val interface{}, key string) ([]string, []error) {
-	if _, err := glob.Compile(val.(string)); err != nil {
+	// Whitespace is ignored for these filters.
+	filter := removeSpaces(val.(string))
+
+	if _, err := glob.Compile(filter); err != nil {
 		return nil, []error{fmt.Errorf("%q must be a valid glob: %w", key, err)}
 	}
 	return nil, nil
@@ -70,6 +75,9 @@ func dataSourceSitefilterRead(d *schema.ResourceData, _ any) error {
 		separator      = d.Get("separator").(string)
 		rawSiteConfigs = d.Get("site_yamls").(map[string]any)
 	)
+
+	// Whitespace is ignored for these filters.
+	filter = removeSpaces(filter)
 
 	filterGlob, err := glob.Compile(filter, []rune(separator)[0])
 	if err != nil {
@@ -155,4 +163,14 @@ func (m SiteMetadata) FQN() string {
 		m.ServingRole,
 		m.DataCenter,
 	)
+}
+
+// removeSpaces returns the whitespace-less version of s.
+func removeSpaces(s string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsSpace(r) {
+			return -1
+		}
+		return r
+	}, s)
 }
